@@ -3,8 +3,6 @@ import extractJson from "../utilis/extractJson.js";
 import Website from "../models/website.model.js"
 import User from "../models/user.model.js"
 
-
-
 const masterPrompt = `
 YOU ARE A PRINCIPAL FRONTEND ARCHITECT
 AND A SENIOR UI/UX ENGINEER
@@ -101,7 +99,6 @@ SPA VISIBILITY RULE (MANDATORY)
 - At least ONE page MUST be visible on initial load
 - Hiding all content is INVALID
 
-
 --------------------------------------------------
 REQUIRED SPA PAGES
 --------------------------------------------------
@@ -154,33 +151,25 @@ ABSOLUTE RULES
 `;
 
 
-
-
-
-
+// ✅ 1. GENERATE WEBSITE
 export const generateWebsite = async (req, res) => {
-
  try {
   const { prompt } = req.body
   if (!prompt) {
-   return res.status(400).json({ message: " prompt is required " })
-
+   return res.status(400).json({ message: "Prompt is required" })
   }
 
   const user = await User.findById(req.user._id)
   if (!user) {
-   return res.status(400).json({ message: " user not found" })
+   return res.status(404).json({ message: "User not found" })
   }
-
 
   if (user.credits < 50) {
-
-   return res.status(400).json({ message: " you have not enought credits to generate website " })
+   return res.status(400).json({ message: "Not enough credits to generate website" })
   }
 
-
-  const finalPrompt = masterPrompt.replace("USER_PROMPT", prompt)
-  let raw = " "
+  const finalPrompt = masterPrompt.replace("{USER_PROMPT}", prompt)
+  let raw = ""
   let parsed = null
 
   for (let i = 0; i < 2 && !parsed; i++) {
@@ -189,36 +178,24 @@ export const generateWebsite = async (req, res) => {
   }
 
   if (!parsed) {
-   raw = await generateResponse(finalPrompt + "\n'n return only raw json.")
+   raw = await generateResponse(finalPrompt + "\n return only raw json.")
    parsed = await extractJson(raw)
   }
 
-  if (!parsed.code) {
-   console.log(" ai returned invalid  response", raw)
-   return res.status(400).json({ message: " ai returned invalid response" })
+  if (!parsed || !parsed.code) {
+   console.log("AI returned invalid response", raw)
+   return res.status(400).json({ message: "AI returned invalid response" })
   }
 
-
   const website = await Website.create({
-
    user: user._id,
    title: prompt.slice(0, 60),
    latestCode: parsed.code,
    conversation: [
-    {
-
-     role: "user",
-     content: prompt
-    },
-
-    {
-     role: " ai",
-     content: parsed.message
-    }
+    { role: "user", content: prompt },
+    { role: "ai", content: parsed.message }
    ]
-
   })
-
 
   user.credits = user.credits - 50
   await user.save()
@@ -228,103 +205,88 @@ export const generateWebsite = async (req, res) => {
    remainingCredits: user.credits
   })
 
-
-
-
  } catch (error) {
   console.error(error)
   return res.status(500).json({ message: "Internal server error" })
  }
-
 }
 
+
+// ✅ 2. GET WEBSITE BY ID
 export const getWebsiteById = async (req, res) => {
  try {
   const website = await Website.findOne({
    _id: req.params.id,
    user: req.user._id
-
   })
+
   if (!website) {
-   return res.status(400).json({ message: " website not found" })
+   return res.status(404).json({ message: "Website not found" })
   }
+
   return res.status(200).json(website)
- } catch (error) {
-  return res.status(500).json({ message: `get website by id error ${error}` })
 
+ } catch (error) {
+  console.error(error)
+  return res.status(500).json({ message: `Get website by id error: ${error}` })
  }
 }
 
-export const changes = async (req, res) => {
- // Placeholder for update function
- return res.status(200).json({ message: "Update function not implemented" })
-}
 
-export const getAll = async (req, res) => {
- try {
-  const websites = await Website.find({ user: req.user._id })
-  return res.status(200).json(websites)
- } catch (error) {
-  return res.status(500).json({ message: `Get all websites error ${error}` })
- }
-}
-
+// ✅ 3. UPDATE WEBSITE (CHANGES)
 export const changes = async (req, res) => {
  try {
   const { prompt } = req.body
   if (!prompt) {
-   return res.status(400).json({ message: " prompt is required" })
+   return res.status(400).json({ message: "Prompt is required" })
   }
 
   const website = await Website.findOne({
    _id: req.params.id,
    user: req.user._id
-
   })
 
   if (!website) {
-   return res.status(400).json({ message: " website  not found " })
-
+   return res.status(404).json({ message: "Website not found" })
   }
 
   const user = await User.findById(req.user._id)
   if (!user) {
-   return res.status(400).json({ message: " user not found" })
-
+   return res.status(404).json({ message: "User not found" })
   }
 
+  // ✅ FIX: pehle incomplete tha — ab poora hai
   if (user.credits < 25) {
-   return res.status
+   return res.status(400).json({ message: "Not enough credits to update website" })
   }
 
-  const updatePrompt = ` update this html website.
-  CURRENT CODE: ${website.latestCode}
+  // ✅ FIX: updatePrompt banana tha, finalPrompt nahi
+  const updatePrompt = `Update this HTML website.
+    CURRENT CODE: ${website.latestCode}
+    USER REQUEST: ${prompt}
+    RETURN RAW JSON ONLY:
+    {
+      "message": "short confirmation",
+      "code": "<UPDATED FULL HTML>"
+    }`
 
-  USER REQUEST:${prompt}
-
-  RETURN RAW JSON ONLY:{
-  "message": "short confirmation"
-  "code": "<UPDATED FULL HTML>"
-  }
-  
-  `
-
-  let raw = " "
+  let raw = ""
   let parsed = null
 
+  // ✅ FIX: finalPrompt → updatePrompt
   for (let i = 0; i < 2 && !parsed; i++) {
-   raw = await generateResponse(finalPrompt)
+   raw = await generateResponse(updatePrompt)
    parsed = await extractJson(raw)
   }
 
   if (!parsed) {
-   raw = await generateResponse(finalPrompt + "\n'n return only raw json.")
+   raw = await generateResponse(updatePrompt + "\n return only raw json.")
    parsed = await extractJson(raw)
   }
 
-  if (!parsed.code) {
-   console.log(" ai returned invalid  response", raw)
-   return res.status(400).json({ message: " ai returned invalid response" })
+  if (!parsed || !parsed.code) {
+   console.log("AI returned invalid response", raw)
+   return res.status(400).json({ message: "AI returned invalid response" })
   }
 
   website.conversation.push(
@@ -332,13 +294,11 @@ export const changes = async (req, res) => {
    { role: "ai", content: parsed.message }
   )
 
-
   website.latestCode = parsed.code
-
   await website.save()
+
   user.credits = user.credits - 25
   await user.save()
-
 
   return res.status(200).json({
    message: parsed.message,
@@ -346,31 +306,21 @@ export const changes = async (req, res) => {
    remainingCredits: user.credits
   })
 
-
-
-
-
-
-
  } catch (error) {
-
-  console.log(error){
-   return res.status(500).json({ message: ` update website error $ {error}` })
-  }
-
+  console.error(error)
+  // ✅ FIX: "$ {error}" → "${error}"
+  return res.status(500).json({ message: `Update website error: ${error}` })
  }
-
- export const getAll = async (req, res) => {
-  try {
-   const websites = await Website.find({ user: req.user._id })
-   return res.status(200).json(websites)
+}
 
 
-
-  }
- }catch (error) {
-  return res.status(500).json({ message: ` get all websites error  $ {error}` })
+// ✅ 4. GET ALL WEBSITES — sirf EK baar
+export const getAll = async (req, res) => {
+ try {
+  const websites = await Website.find({ user: req.user._id })
+  return res.status(200).json(websites)
+ } catch (error) {
+  console.error(error)
+  return res.status(500).json({ message: `Get all websites error: ${error}` })
  }
-
-
 }
